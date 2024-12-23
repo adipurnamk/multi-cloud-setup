@@ -16,14 +16,50 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "8443"
+        linkerd.io/inject: enabled
+        config.linkerd.io/proxy-cpu-request: "0.2"
+        config.linkerd.io/proxy-memory-request: "128Mi"
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "demo-app"
+        vault.hashicorp.com/agent-inject-secret-config: "secret/data/demo-app/config"
     spec:
+      serviceAccountName: demo-app-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - demo-app
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: demo-app
-        image: demo-app:latest
+        image: your-private-registry.azurecr.io/demo-app:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 8080
+        - containerPort: 8443
+          name: https
+        env:
+        - name: SSL_CERT_PATH
+          value: "/etc/ssl/certs/tls.crt"
+        - name: SSL_KEY_PATH
+          value: "/etc/ssl/private/tls.key"
+        volumeMounts:
+        - name: ssl-certs
+          mountPath: "/etc/ssl/certs"
+          readOnly: true
+        - name: ssl-keys
+          mountPath: "/etc/ssl/private"
+          readOnly: true
         resources:
           requests:
             cpu: "100m"
@@ -34,15 +70,36 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8443
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8443
           initialDelaySeconds: 5
           periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      volumes:
+      - name: ssl-certs
+        secret:
+          secretName: demo-app-tls
+          items:
+          - key: tls.crt
+            path: tls.crt
+      - name: ssl-keys
+        secret:
+          secretName: demo-app-tls
+          items:
+          - key: tls.key
+            path: tls.key
+      imagePullSecrets:
+        - name: regcred
 ---
 apiVersion: v1
 kind: Service
@@ -53,8 +110,9 @@ spec:
     app: demo-app
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: 8080
+      port: 443
+      targetPort: 8443
+      name: https
   type: LoadBalancer
 ---
 apiVersion: autoscaling/v2
@@ -81,3 +139,67 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: demo-app-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: demo-app
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: demo-app-network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: demo-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    ports:
+    - protocol: TCP
+      port: 8443
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: database
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-app-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: demo-app-role
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-app-rolebinding
+roleRef:
+  name: demo-app-role
+  kind: Role
+subjects:
+- kind: ServiceAccount
+  name: demo-app-sa
+  namespace: default
