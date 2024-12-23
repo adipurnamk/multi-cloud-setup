@@ -43,7 +43,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: demo-app
-        image: your-private-registry.azurecr.io/demo-app:latest
+        image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo-app:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8443
