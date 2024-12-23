@@ -115,6 +115,13 @@ spec:
       name: https
   type: LoadBalancer
 ---
+# HorizontalPodAutoscaler (HPA) Configuration
+# This configuration automatically scales the number of pods based on resource utilization:
+# - Scales between 3 and 10 pods
+# - Triggers scaling when CPU usage exceeds 70% of the limit
+# - Triggers scaling when memory usage exceeds 80% of the limit
+# - Helps maintain application performance during high load
+# - Optimizes resource usage during low demand periods
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
