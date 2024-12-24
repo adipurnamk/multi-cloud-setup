@@ -131,6 +131,55 @@ graph TB
 
 ## CI/CD Pipeline
 
+### CI/CD Workflow Diagram
+
+```mermaid
+graph TD
+    subgraph "Continuous Integration (ci.yml)"
+        COMMIT[Code Commit] --> LINT[Linting]
+        COMMIT --> TEST[Unit Testing]
+        COMMIT --> SCAN1[Trivy Vulnerability Scan]
+        COMMIT --> SCAN2[SonarCloud SAST]
+        
+        LINT --> BUILD[Container Build]
+        TEST --> BUILD
+        SCAN1 --> BUILD
+        SCAN2 --> BUILD
+        
+        BUILD --> PUSH1[Push to AWS ECR]
+        BUILD --> PUSH2[Push to GCP Artifact Registry]
+    end
+
+    subgraph "Infrastructure Deployment (cd.yml)"
+        PUSH1 --> BOOTSTRAP{Bootstrap Needed?}
+        PUSH2 --> BOOTSTRAP
+        
+        BOOTSTRAP -->|Yes| INIT[Terraform Bootstrap]
+        BOOTSTRAP -->|No| PLAN[Terraform Plan]
+        
+        INIT --> PLAN
+        
+        PLAN --> AWS_APPLY[AWS Terraform Apply]
+        PLAN --> GCP_APPLY[GCP Terraform Apply]
+    end
+
+    subgraph "Service Deployment (deploy.yml)"
+        AWS_APPLY --> DEPLOY1[Deploy to AWS EKS]
+        GCP_APPLY --> DEPLOY2[Deploy to GCP GKE]
+        
+        DEPLOY1 --> VERIFY1[Verify Deployment]
+        DEPLOY2 --> VERIFY2[Verify Deployment]
+    end
+
+    classDef integration fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef deployment fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef verification fill:#bfb,stroke:#333,stroke-width:2px;
+
+    class COMMIT,LINT,TEST,SCAN1,SCAN2,BUILD,PUSH1,PUSH2 integration;
+    class BOOTSTRAP,INIT,PLAN,AWS_APPLY,GCP_APPLY deployment;
+    class VERIFY1,VERIFY2 verification;
+```
+
 ### Continuous Integration (`ci.yml`)
 - Security scanning:
   - Trivy for vulnerability scanning
